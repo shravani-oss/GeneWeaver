@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geneweaver"
+version = "0.1.0"
+description = "GPU-accelerated CRISPR off-target search engine"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "biopython",
+    "numba",
+    "dask",
+    "distributed",
+    "textual",
+]
+
+[project.optional-dependencies]
+gpu = ["numba-cuda[cu12]", "dask-cuda", "nvidia-ml-py"]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["geneweaver*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

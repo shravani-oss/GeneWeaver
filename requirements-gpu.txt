@@ -1,0 +1,4 @@
+# Install on NVIDIA machines only (Kaggle, Lightning AI, AWS). Never on the Mac.
+numba-cuda[cu12]
+dask-cuda
+nvidia-ml-py

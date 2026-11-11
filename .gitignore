@@ -1,0 +1,25 @@
+# Genome data and outputs (never commit)
+data/*
+!data/.gitkeep
+results/*
+!results/.gitkeep
+*.fa
+*.fa.gz
+*.fasta
+*.fasta.gz
+# The small hand-made test genome IS committed
+!tests/data/*.fa
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Notebooks / editors / OS
+.ipynb_checkpoints/
+.vscode/
+.DS_Store
