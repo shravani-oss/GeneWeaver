@@ -189,22 +189,25 @@ wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
 ## 5. Stages
 
 ### Stage 0: Environment (Mac + Kaggle)
-- [ ] Mac checks pass, `.venv` created, `requirements.txt` installed
-- [ ] Folder structure, `.gitignore`, `pyproject.toml` created; first commit pushed
+- [x] Mac checks pass, `.venv` created, `requirements.txt` installed
+- [x] Folder structure, `.gitignore`, `pyproject.toml` created; first commit pushed
 - [ ] Kaggle account verified, notebook with GPU T4 x2 shows 2 GPUs in `nvidia-smi`
-- [ ] `data/chr21.fa` downloaded on the Mac
+- [x] `data/chr21.fa` downloaded on the Mac
 
 **Done when:** `python -c "import Bio, numpy, numba, dask, textual"` works on the Mac, and `nvidia-smi` shows 2 GPUs on Kaggle.
 
 ### Week 1: Parser and CPU baseline (Mac)
-- [ ] `encoding.py`: encode/decode, reverse complement, with tests
-- [ ] `parser.py`: stream records with `Bio.SeqIO.parse`, uppercase, encode to `uint8`, yield chunks `(chrom, offset, array)` with a 22-base overlap. Memory must stay flat (no full-file load).
-- [ ] `tests/data/mock.fa`: a small genome with **planted sites** (0, 1, 2, 3, 4 and 5 mismatches, both strands, one crossing a chunk border, one with `N`). The expected hits are written in the test.
-- [ ] `cpu_baseline.py`: pure-Python loop over every position. Compare the 20 guide bases, check the PAM, and do this for both strands.
-- [ ] Optional: a Numba CPU (`@njit`) version, for a fair "CPU at full speed" comparison
-- [ ] `results.py`: dedupe across chunk overlaps, write TSV
+- [x] `encoding.py`: encode/decode, reverse complement, with tests
+- [x] `parser.py`: stream records, uppercase, encode to `uint8`, yield chunks `(chrom, offset, array)` with a 22-base overlap. Memory must stay flat (no full-file load).
+  - Implemented with a line-by-line reader instead of `Bio.SeqIO.parse`, because SeqIO holds each whole chromosome in memory (chr1 ≈ 250 MB). Memory stays at about one chunk.
+- [x] `tests/data/mock.fa`: a small genome with **planted sites** (0, 1, 2, 3, 4 and 5 mismatches, both strands, one crossing a chunk border, one with `N`). The expected hits are written in the test.
+- [x] `cpu_baseline.py`: pure-Python loop over every position. Compare the 20 guide bases, check the PAM, and do this for both strands.
+- [x] Optional: a Numba CPU (`@njit`) version, for a fair "CPU at full speed" comparison
+- [x] `results.py`: dedupe across chunk overlaps, write TSV
 
 **Done when:** all planted sites are found with the correct position, strand and mismatch count; the 5-mismatch site is **not** reported (max 4); and chr21 parses on the Mac without memory growing.
+
+> **Week 1 result:** all checks pass. Both backends find exactly the 8 planted sites in `mock.fa` for every chunk size tested (23 to 1,000,000). Python heap memory stays at 10 MB per chunk while streaming chr21 (5 M chunks). On all of chr21 (guide `GAGTCCGAGCAGAAGAAGAA`), pure Python and Numba CPU write byte-identical TSVs: 2 sites at ≤ 4 mismatches and 206 at ≤ 6. The two ≤ 4 sites were also confirmed by reading the raw file.
 
 ### Week 2: CUDA kernel and TUI layout
 **Kernel (write on the Mac, run on Kaggle)**
