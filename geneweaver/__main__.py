@@ -7,7 +7,10 @@ import sys
 import time
 from collections import Counter
 
-from .cpu_baseline import BACKENDS
+from pathlib import Path
+
+from .cpu_baseline import BACKENDS, get_backend
+from .encoding import validate_guide
 from .parser import DEFAULT_CHUNK_SIZE
 from .pipeline import scan
 from .results import write_tsv
@@ -27,21 +30,37 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--main-chroms-only", action="store_true", help="keep only chr1-22, X, Y")
     s.add_argument("--out", default="results/hits.tsv", help="output TSV path")
     s.add_argument("--quiet", action="store_true", help="no per-chunk progress lines")
+    s.add_argument("--tui", action="store_true", help="show the live terminal dashboard")
     return ap
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
-    def progress(chunk, hits):
-        if not args.quiet:
-            print(f"  {chunk.chrom}:{chunk.offset:,}-{chunk.end:,}  {len(hits)} hits", file=sys.stderr)
+    # Check inputs before starting, so mistakes show up as a plain error
+    # message here rather than inside the dashboard.
+    validate_guide(args.guide)
+    get_backend(args.backend)
+    if not Path(args.fasta).exists():
+        raise FileNotFoundError(f"FASTA file not found: {args.fasta}")
 
     t0 = time.perf_counter()
-    hits = scan(
-        args.fasta, args.guide, max_mm=args.max_mm, backend=args.backend,
-        chunk_size=args.chunk_size, main_chroms_only=args.main_chroms_only, on_chunk=progress,
-    )
+    if args.tui:
+        from .tui import ScanConfig, run_tui  # Textual is only imported when needed
+
+        hits = run_tui(ScanConfig(
+            fasta=args.fasta, guide=args.guide, max_mm=args.max_mm, backend=args.backend,
+            chunk_size=args.chunk_size, main_chroms_only=args.main_chroms_only, out=args.out,
+        ))
+    else:
+        def progress(chunk, hits):
+            if not args.quiet:
+                print(f"  {chunk.chrom}:{chunk.offset:,}-{chunk.end:,}  {len(hits)} hits", file=sys.stderr)
+
+        hits = scan(
+            args.fasta, args.guide, max_mm=args.max_mm, backend=args.backend,
+            chunk_size=args.chunk_size, main_chroms_only=args.main_chroms_only, on_chunk=progress,
+        )
+        write_tsv(hits, args.out)
     dt = time.perf_counter() - t0
-    write_tsv(hits, args.out)
 
     by_mm = Counter(h.mismatches for h in hits)
     print(f"{len(hits)} sites in {dt:.2f} s ({args.backend}) -> {args.out}")

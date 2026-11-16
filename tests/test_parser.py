@@ -115,3 +115,23 @@ def test_sequence_before_header(tmp_path):
     path.write_text("ACGT\n>c\nACGT\n")
     with pytest.raises(ValueError):
         list(iter_chunks(path))
+
+
+@pytest.mark.parametrize("chunk_size", [23, 24, 37, 100, 257, 999, 1000, 10_000])
+def test_count_chunks_matches_iter_chunks(genome, chunk_size):
+    from geneweaver.parser import count_chunks
+
+    path, _ = genome
+    assert count_chunks(path, chunk_size) == len(list(iter_chunks(path, chunk_size)))
+
+
+def test_record_lengths_uses_fai_and_filters(tmp_path):
+    from geneweaver.parser import record_lengths
+
+    path = tmp_path / "hg.fa"
+    write_fasta(path, [("chr1", "A" * 30), ("chrUn_x", "C" * 7)])
+    assert record_lengths(path) == {"chr1": 30, "chrUn_x": 7}
+    # A (deliberately different) .fai is preferred when present
+    (tmp_path / "hg.fa.fai").write_text("chr1\t99\t6\t60\t61\nchrUn_x\t5\t9\t60\t61\n")
+    assert record_lengths(path) == {"chr1": 99, "chrUn_x": 5}
+    assert record_lengths(path, main_chroms_only=True) == {"chr1": 99}

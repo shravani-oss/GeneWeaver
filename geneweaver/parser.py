@@ -124,3 +124,48 @@ def iter_chunks(
 
     if keep and fresh > 0:
         yield flush()
+
+
+# ---------------------------------------------------------------------------
+# Counting chunks ahead of time (for progress bars)
+# ---------------------------------------------------------------------------
+def chunks_for_length(length: int, chunk_size: int) -> int:
+    """How many chunks ``iter_chunks`` yields for a chromosome of ``length`` bases."""
+    if length <= 0:
+        return 0
+    if length <= chunk_size:
+        return 1
+    step = chunk_size - CHUNK_OVERLAP
+    return 1 + -(-(length - chunk_size) // step)  # ceiling division
+
+
+def record_lengths(path: str | Path, main_chroms_only: bool = False) -> dict[str, int]:
+    """Length of every record, without keeping any sequence in memory.
+
+    Uses the ``.fai`` index (made by ``samtools faidx``) if one sits next to
+    the file, which is instant.  Otherwise reads the file once, counting bases.
+    """
+    path = Path(path)
+    fai = Path(str(path) + ".fai")
+    lengths: dict[str, int] = {}
+    if fai.exists() and path.suffix != ".gz":
+        for line in fai.read_text().splitlines():
+            name, length = line.split("\t")[:2]
+            lengths[name] = int(length)
+    else:
+        name = None
+        with _open(path) as fh:
+            for line in fh:
+                if line.startswith(b">"):
+                    header = line[1:].strip()
+                    name = header.split()[0].decode("ascii") if header else ""
+                    lengths[name] = 0
+                elif name is not None:
+                    lengths[name] += len(line.rstrip())
+    if main_chroms_only:
+        lengths = {k: v for k, v in lengths.items() if k in MAIN_CHROMS}
+    return lengths
+
+
+def count_chunks(path: str | Path, chunk_size: int = DEFAULT_CHUNK_SIZE, main_chroms_only: bool = False) -> int:
+    return sum(chunks_for_length(n, chunk_size) for n in record_lengths(path, main_chroms_only).values())
