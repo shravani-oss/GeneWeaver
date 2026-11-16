@@ -37,7 +37,7 @@ INVALID = 255
 RawHit = tuple[int, str, int]  # (local position, strand, mismatch count)
 
 
-def _check_max_mm(max_mm: int) -> None:
+def check_max_mm(max_mm: int) -> None:
     if not 0 <= max_mm <= GUIDE_LEN:
         raise ValueError(f"max_mm must be between 0 and {GUIDE_LEN}, got {max_mm}")
 
@@ -47,7 +47,7 @@ def _check_max_mm(max_mm: int) -> None:
 # ---------------------------------------------------------------------------
 def search_chunk_python(seq: np.ndarray, guide: np.ndarray, max_mm: int) -> list[RawHit]:
     """Check every position of ``seq`` with a plain Python loop."""
-    _check_max_mm(max_mm)
+    check_max_mm(max_mm)
     # Indexing a bytes object gives Python ints and is much faster than
     # indexing a NumPy array element by element.
     s = seq.tobytes()
@@ -127,7 +127,7 @@ def hits_from_counts(out_plus: np.ndarray, out_minus: np.ndarray, max_mm: int) -
 
 def search_chunk_numba(seq: np.ndarray, guide: np.ndarray, max_mm: int) -> list[RawHit]:
     """Same result as ``search_chunk_python``, using compiled Numba code."""
-    _check_max_mm(max_mm)
+    check_max_mm(max_mm)
     seq = np.ascontiguousarray(seq, dtype=np.uint8)
     guide = np.ascontiguousarray(guide, dtype=np.uint8)
     rc = np.ascontiguousarray(reverse_complement(guide))
@@ -137,14 +137,18 @@ def search_chunk_numba(seq: np.ndarray, guide: np.ndarray, max_mm: int) -> list[
 
 SearchFn = Callable[[np.ndarray, np.ndarray, int], list[RawHit]]
 
-BACKENDS: dict[str, SearchFn] = {
-    "cpu": search_chunk_python,
-    "numba-cpu": search_chunk_numba,
-}
+BACKENDS = ("cpu", "numba-cpu", "gpu")
 
 
 def get_backend(name: str) -> SearchFn:
-    try:
-        return BACKENDS[name]
-    except KeyError:
-        raise ValueError(f"unknown backend {name!r}; choose from {sorted(BACKENDS)}") from None
+    if name == "cpu":
+        return search_chunk_python
+    if name == "numba-cpu":
+        return search_chunk_numba
+    if name == "gpu":
+        # Imported only when asked for, so CPU runs never touch CUDA.
+        from .gpu_kernels import require_gpu, search_chunk_gpu
+
+        require_gpu()
+        return search_chunk_gpu
+    raise ValueError(f"unknown backend {name!r}; choose from {list(BACKENDS)}")

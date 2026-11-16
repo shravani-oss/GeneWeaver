@@ -21,8 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--fasta", required=True, help="genome FASTA (.fa or .fa.gz)")
     s.add_argument("--guide", required=True, help="20-base guide sequence (A/C/G/T)")
     s.add_argument("--max-mm", type=int, default=4, help="maximum mismatches (default 4)")
-    s.add_argument("--backend", choices=sorted(BACKENDS), default="numba-cpu",
-                   help="search engine (gpu arrives in Week 2)")
+    s.add_argument("--backend", choices=BACKENDS, default="numba-cpu",
+                   help="search engine (gpu needs an NVIDIA GPU or NUMBA_ENABLE_CUDASIM=1)")
     s.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE, help="bases per chunk")
     s.add_argument("--main-chroms-only", action="store_true", help="keep only chr1-22, X, Y")
     s.add_argument("--out", default="results/hits.tsv", help="output TSV path")
@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "scan":
             return cmd_scan(args)
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, RuntimeError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     return 1
