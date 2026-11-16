@@ -211,16 +211,17 @@ wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
 
 ### Week 2: CUDA kernel and TUI layout
 **Kernel (write on the Mac, run on Kaggle)**
-- [ ] `gpu_kernels.py`: a `@cuda.jit` kernel where **one thread = one genome position**. Each thread writes its mismatch count into an output `uint8` array (`255` = invalid / no PAM). Use separate outputs for `+` and `-` strands.
-- [ ] Launch config: `threads_per_block = 256`, `blocks = ceil(n / 256)`. Guard with `if i < n_valid`.
-- [ ] Memory transfers: `cuda.to_device()` for the chunk and the guide, `cuda.device_array()` for outputs, `.copy_to_host()` for results. The host then finds hits with `np.nonzero(out <= max_mm)`.
-- [ ] Reuse device buffers across chunks; don't allocate new ones for every chunk.
+- [x] `gpu_kernels.py`: a `@cuda.jit` kernel where **one thread = one genome position**. Each thread writes its mismatch count into an output `uint8` array (`255` = invalid / no PAM). Use separate outputs for `+` and `-` strands.
+- [x] Launch config: `threads_per_block = 256`, `blocks = ceil(n / 256)`. Guard with `if i < n_valid`.
+- [x] Memory transfers: `cuda.to_device()` for the chunk and the guide, `cuda.device_array()` for outputs, `.copy_to_host()` for results. The host then finds hits with `np.nonzero(out <= max_mm)`.
+- [x] Reuse device buffers across chunks; don't allocate new ones for every chunk.
 - [ ] `test_gpu_matches_cpu.py`: GPU hits == CPU hits on `mock.fa` (simulator on the Mac), then on chr21 (real GPU on Kaggle)
+  - Simulator part passes on the Mac. The chr21 part runs automatically on Kaggle via `notebooks/kaggle_runner.ipynb`.
 
 **TUI (Mac)**
-- [ ] `tui.py`: a Textual app with a progress bar (chunks done / total), a results `DataTable`, and a GPU stats panel
-- [ ] Run the scan in a background worker (`@work(thread=True)`) so the UI doesn't freeze
-- [ ] GPU panel updates every second with `set_interval`. On the Mac, show "No NVIDIA GPU (CPU mode)" instead of crashing.
+- [x] `tui.py`: a Textual app with a progress bar (chunks done / total), a results `DataTable`, and a GPU stats panel
+- [x] Run the scan in a background worker (`@work(thread=True)`) so the UI doesn't freeze
+- [x] GPU panel updates every second with `set_interval`. On the Mac, show "No NVIDIA GPU (CPU mode)" instead of crashing.
 
 **Done when:** GPU results exactly equal CPU results on `mock.fa` and chr21, and the TUI shows live progress for a CPU-backend scan on the Mac.
 
