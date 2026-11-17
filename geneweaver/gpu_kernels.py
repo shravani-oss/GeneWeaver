@@ -114,28 +114,43 @@ class GpuSearcher:
         self.capacity = n
         self.allocations += 1
 
-    def count(self, seq: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Per-position mismatch counts (INVALID where there is no PAM)."""
+    # The three steps of one chunk, kept separate so benchmarks can time the
+    # kernel on its own as well as the whole round trip.
+    def upload(self, seq: np.ndarray) -> int:
+        """Copy a chunk host -> device.  Returns n_valid (number of windows)."""
         seq = np.ascontiguousarray(seq, dtype=np.uint8)
         n = len(seq)
         n_valid = n - SITE_LEN + 1
+        if n_valid > 0:
+            self._ensure_capacity(n)
+            self.d_seq[:n].copy_to_device(seq)
+        return max(n_valid, 0)
+
+    def launch(self, n_valid: int) -> None:
+        """Start the kernel.  Returns immediately; the GPU keeps working."""
         if n_valid <= 0:
-            empty = np.empty(0, dtype=np.uint8)
-            return empty, empty.copy()
-
-        self._ensure_capacity(n)
-        self.d_seq[:n].copy_to_device(seq)  # host -> device
-
+            return
         blocks = math.ceil(n_valid / THREADS_PER_BLOCK)
         mismatch_kernel[blocks, THREADS_PER_BLOCK](
             self.d_seq, n_valid, self.d_guide, self.d_rc_guide, self.d_plus, self.d_minus
         )
 
-        # device -> host.  copy_to_host waits for the kernel to finish first,
-        # so no explicit cuda.synchronize() is needed here.
-        out_plus = self.d_plus[:n_valid].copy_to_host()
-        out_minus = self.d_minus[:n_valid].copy_to_host()
-        return out_plus, out_minus
+    def download(self, n_valid: int) -> tuple[np.ndarray, np.ndarray]:
+        """Copy the counts device -> host.
+
+        copy_to_host waits for the kernel to finish first, so no explicit
+        cuda.synchronize() is needed here.
+        """
+        if n_valid <= 0:
+            empty = np.empty(0, dtype=np.uint8)
+            return empty, empty.copy()
+        return self.d_plus[:n_valid].copy_to_host(), self.d_minus[:n_valid].copy_to_host()
+
+    def count(self, seq: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Per-position mismatch counts (INVALID where there is no PAM)."""
+        n_valid = self.upload(seq)
+        self.launch(n_valid)
+        return self.download(n_valid)
 
     def search(self, seq: np.ndarray, max_mm: int) -> list[RawHit]:
         check_max_mm(max_mm)

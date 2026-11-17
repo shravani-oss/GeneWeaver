@@ -12,7 +12,7 @@ from pathlib import Path
 from .cpu_baseline import BACKENDS, get_backend
 from .encoding import validate_guide
 from .parser import DEFAULT_CHUNK_SIZE
-from .pipeline import scan
+from .pipeline import ChunkLog, scan
 from .results import write_tsv
 
 
@@ -31,6 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--out", default="results/hits.tsv", help="output TSV path")
     s.add_argument("--quiet", action="store_true", help="no per-chunk progress lines")
     s.add_argument("--tui", action="store_true", help="show the live terminal dashboard")
+    s.add_argument("--chunk-log", metavar="TSV",
+                   help="write per-chunk timing (and GPU memory for --backend gpu) to this file")
     return ap
 
 
@@ -41,6 +43,8 @@ def cmd_scan(args: argparse.Namespace) -> int:
     get_backend(args.backend)
     if not Path(args.fasta).exists():
         raise FileNotFoundError(f"FASTA file not found: {args.fasta}")
+    if args.tui and args.chunk_log:
+        raise ValueError("--chunk-log cannot be combined with --tui yet")
 
     t0 = time.perf_counter()
     if args.tui:
@@ -51,14 +55,29 @@ def cmd_scan(args: argparse.Namespace) -> int:
             chunk_size=args.chunk_size, main_chroms_only=args.main_chroms_only, out=args.out,
         ))
     else:
+        log = None
+        if args.chunk_log:
+            memory_info = None
+            if args.backend == "gpu":
+                from .gpu_kernels import gpu_memory_info
+
+                memory_info = gpu_memory_info
+            log = ChunkLog(args.chunk_log, memory_info)
+
         def progress(chunk, hits):
+            if log is not None:
+                log(chunk, hits)
             if not args.quiet:
                 print(f"  {chunk.chrom}:{chunk.offset:,}-{chunk.end:,}  {len(hits)} hits", file=sys.stderr)
 
-        hits = scan(
-            args.fasta, args.guide, max_mm=args.max_mm, backend=args.backend,
-            chunk_size=args.chunk_size, main_chroms_only=args.main_chroms_only, on_chunk=progress,
-        )
+        try:
+            hits = scan(
+                args.fasta, args.guide, max_mm=args.max_mm, backend=args.backend,
+                chunk_size=args.chunk_size, main_chroms_only=args.main_chroms_only, on_chunk=progress,
+            )
+        finally:
+            if log is not None:
+                log.close()
         write_tsv(hits, args.out)
     dt = time.perf_counter() - t0
 

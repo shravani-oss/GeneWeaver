@@ -126,6 +126,33 @@ def iter_chunks(
         yield flush()
 
 
+def read_region(path: str | Path, chrom: str | None, start: int, length: int) -> np.ndarray:
+    """Return bases [start, start+length) of one chromosome as uint8 codes.
+
+    Streams the file (memory stays ~ length + 1 MB).  ``chrom=None`` means the
+    first record.  Used by benchmarks to cut out a fixed test slice.
+    """
+    out = np.empty(length, dtype=np.uint8)
+    end = start + length
+    covered = start
+    for ch in iter_chunks(path, chunk_size=1_000_000):
+        if chrom is None:
+            chrom = ch.chrom
+        if ch.chrom != chrom:
+            if covered > start:  # we already passed the chromosome
+                break
+            continue
+        lo, hi = max(ch.offset, start), min(ch.end, end)
+        if lo < hi:
+            out[lo - start : hi - start] = ch.seq[lo - ch.offset : hi - ch.offset]
+            covered = max(covered, hi)
+        if ch.end >= end:
+            break
+    if covered < end:
+        raise ValueError(f"{path}: {chrom}:{start:,}-{end:,} is not fully inside the chromosome")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Counting chunks ahead of time (for progress bars)
 # ---------------------------------------------------------------------------
