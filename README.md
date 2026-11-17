@@ -238,6 +238,8 @@ wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
 
 **Done when:** `benchmarks/results.md` shows ≥ 100× speedup and the full genome finishes without memory errors.
 
+> **Tooling ready (not yet run on a GPU):** `benchmarks/bench.py` (slice + whole-file timings, warm-up excluded, median of 3, results cross-checked between backends), `--chunk-log` on the CLI (per-chunk time and GPU memory), and `benchmarks/memory_report.py` (flat or growing verdict). Run them with sections 7–8 of `notebooks/kaggle_runner.ipynb` once Week 2 passes on Kaggle.
+
 ### Week 3: Multi-GPU and scoring
 **Dask**
 - [ ] `scheduler.py`: on GPU machines, `LocalCUDACluster()` creates one worker per GPU. Submit chunks with `client.map(...)` and gather the results.
