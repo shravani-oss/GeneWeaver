@@ -242,9 +242,11 @@ wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
 
 ### Week 3: Multi-GPU and scoring
 **Dask**
-- [ ] `scheduler.py`: on GPU machines, `LocalCUDACluster()` creates one worker per GPU. Submit chunks with `client.map(...)` and gather the results.
-- [ ] On the Mac, the same code runs with a CPU `LocalCluster` and the CPU backend, so you can test the scheduling logic locally
-- [ ] Log which worker/GPU processed each chunk, how many bases, and how long it took
+- [x] `scheduler.py`: on GPU machines, `LocalCUDACluster()` creates one worker per GPU. Submit chunks with `client.map(...)` and gather the results.
+  - Chunks are submitted one at a time with at most 2 per worker in flight, instead of `client.map` over all of them, so memory stays flat on hg38. The scheduler picks the least-busy worker itself, because Dask alone put 91% of chr21 on one worker when searching was faster than reading.
+- [x] On the Mac, the same code runs with a CPU `LocalCluster` and the CPU backend, so you can test the scheduling logic locally
+  - chr21 with `--workers 2`: identical TSV to the single-process run, and the workers split the bases 48.6% / 51.4%.
+- [x] Log which worker/GPU processed each chunk, how many bases, and how long it took (`--chunk-log` with `--gpus`/`--workers`)
 
 **Scoring**
 - [ ] `scoring.py`: implement the **MIT score** (Hsu et al., 2013) and the **CFD score** (Doench et al., 2016) using the weights from the original publications (cite them in comments). Mismatches near the PAM (the "seed region") count as worse.

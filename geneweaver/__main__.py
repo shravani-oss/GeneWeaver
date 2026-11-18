@@ -33,7 +33,38 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--tui", action="store_true", help="show the live terminal dashboard")
     s.add_argument("--chunk-log", metavar="TSV",
                    help="write per-chunk timing (and GPU memory for --backend gpu) to this file")
+    s.add_argument("--gpus", type=int, default=0,
+                   help="spread chunks over N GPUs with Dask (needs --backend gpu)")
+    s.add_argument("--workers", type=int, default=0,
+                   help="spread chunks over N CPU worker processes with Dask (cpu / numba-cpu backends)")
     return ap
+
+
+def run_distributed(args: argparse.Namespace, n_workers: int):
+    from .scheduler import WorkerLog, scan_distributed, work_share
+
+    log = WorkerLog(args.chunk_log) if args.chunk_log else None
+
+    def progress(r):
+        if log is not None:
+            log(r)
+        if not args.quiet:
+            print(f"  {r.chrom}:{r.offset:,}-{r.offset + r.bases:,}  {len(r.hits)} hits  "
+                  f"[{r.device}, {r.worker}, {r.seconds:.2f} s]", file=sys.stderr)
+
+    try:
+        hits, results = scan_distributed(
+            args.fasta, args.guide, max_mm=args.max_mm, backend=args.backend, chunk_size=args.chunk_size,
+            main_chroms_only=args.main_chroms_only, n_workers=n_workers, on_chunk=progress,
+        )
+    finally:
+        if log is not None:
+            log.close()
+
+    print("work per worker:")
+    for name, d in work_share(results).items():
+        print(f"  {name}: {d['chunks']} chunks, {d['bases']:,} bases ({d['share']:.1%}), busy {d['seconds']:.2f} s")
+    return hits
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
@@ -45,9 +76,21 @@ def cmd_scan(args: argparse.Namespace) -> int:
         raise FileNotFoundError(f"FASTA file not found: {args.fasta}")
     if args.tui and args.chunk_log:
         raise ValueError("--chunk-log cannot be combined with --tui yet")
+    if args.gpus and args.backend != "gpu":
+        raise ValueError("--gpus needs --backend gpu (use --workers for CPU backends)")
+    if args.workers and args.backend == "gpu":
+        raise ValueError("--workers is for CPU backends; use --gpus with --backend gpu")
+    n_workers = args.gpus or args.workers
+    if n_workers < 0:
+        raise ValueError("--gpus / --workers must be positive")
+    if n_workers and args.tui:
+        raise ValueError("--tui with --gpus/--workers arrives in Week 4")
 
     t0 = time.perf_counter()
-    if args.tui:
+    if n_workers:
+        hits = run_distributed(args, n_workers)
+        write_tsv(hits, args.out)
+    elif args.tui:
         from .tui import ScanConfig, run_tui  # Textual is only imported when needed
 
         hits = run_tui(ScanConfig(

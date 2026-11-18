@@ -120,6 +120,16 @@ def scan_distributed(
         cluster = make_cluster(backend, n_workers)
     try:
         with Client(cluster) as client:
+            client.wait_for_workers(n_workers if own_cluster else 1)
+            workers = sorted(client.scheduler_info()["workers"])
+            # We pick the worker for each chunk ourselves.  Left to itself, Dask
+            # sends almost every chunk to the same worker whenever searching is
+            # faster than reading the next chunk (both workers look idle, and
+            # the tie goes to the same one every time).
+            in_flight = {w: 0 for w in workers}
+            assigned_bases = {w: 0 for w in workers}
+            target_of: dict[str, str] = {}  # future key -> worker address
+
             chunks = iter_chunks(fasta, chunk_size=chunk_size, main_chroms_only=main_chroms_only)
             pending = as_completed()
             next_index = 0
@@ -129,9 +139,15 @@ def scan_distributed(
                 ch = next(chunks, None)
                 if ch is None:
                     return False
+                # least busy worker first, then the one that has had the fewest bases
+                w = min(workers, key=lambda a: (in_flight[a], assigned_bases[a]))
                 fut = client.submit(
-                    search_task, next_index, ch.chrom, ch.offset, ch.seq, guide_enc, max_mm, backend, pure=False
+                    search_task, next_index, ch.chrom, ch.offset, ch.seq, guide_enc, max_mm, backend,
+                    pure=False, workers=[w], allow_other_workers=True,  # fall back if w dies
                 )
+                in_flight[w] += 1
+                assigned_bases[w] += len(ch.seq)
+                target_of[fut.key] = w
                 pending.add(fut)
                 next_index += 1
                 return True
@@ -143,6 +159,7 @@ def scan_distributed(
             results: list[ChunkResult] = []
             for fut in pending:  # yields futures as they finish
                 res: ChunkResult = fut.result()  # re-raises a worker's error here
+                in_flight[target_of.pop(fut.key)] -= 1
                 fut.release()
                 results.append(res)
                 if on_chunk is not None:

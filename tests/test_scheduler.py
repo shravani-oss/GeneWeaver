@@ -31,12 +31,14 @@ def test_distributed_equals_serial(cluster, backend, chunk_size):
     assert sorted(r.index for r in results) == list(range(len(results)))
 
 
-def test_both_workers_get_work(cluster):
-    # Plenty of small chunks, so both workers must be used.
+def test_work_is_balanced(cluster):
+    # Searching these chunks is far faster than reading them, which is exactly
+    # when Dask on its own piles everything onto one worker.  README target:
+    # each worker gets 50% +/- 10% of the bases.
     _, results = scan_distributed(MOCK, GUIDE, backend="numba-cpu", chunk_size=30, cluster=cluster)
     share = work_share(results)
     assert len(share) == 2
-    assert all(d["chunks"] > 0 for d in share.values())
+    assert all(0.4 <= d["share"] <= 0.6 for d in share.values()), share
     assert sum(d["bases"] for d in share.values()) == sum(r.bases for r in results)
     assert abs(sum(d["share"] for d in share.values()) - 1) < 1e-9
 
@@ -78,3 +80,21 @@ def test_gpu_backend_through_dask(cluster):
     hits, results = scan_distributed(MOCK, GUIDE, backend="gpu", chunk_size=100, cluster=cluster)
     assert as_tuples(hits) == EXPECTED
     assert all(r.device.startswith("GPU") for r in results)
+
+
+def test_cli_workers(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    out, log = tmp_path / "hits.tsv", tmp_path / "workers.tsv"
+    base = [sys.executable, "-m", "geneweaver", "scan", "--fasta", str(MOCK), "--guide", GUIDE, "--chunk-size", "50"]
+    r = subprocess.run(base + ["--workers", "2", "--out", str(out), "--chunk-log", str(log), "--quiet"],
+                       capture_output=True, text=True, cwd=root)
+    assert r.returncode == 0, r.stderr
+    assert "work per worker:" in r.stdout and "8 sites" in r.stdout
+    assert len(log.read_text().splitlines()) > 2
+
+    r = subprocess.run(base + ["--gpus", "2"], capture_output=True, text=True, cwd=root)
+    assert r.returncode == 2 and "--gpus needs --backend gpu" in r.stderr
